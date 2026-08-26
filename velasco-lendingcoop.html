@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LINDING COOP - Firebase</title>
+<style>
+body {font-family: "Segoe UI", Arial; padding: 10px; background: #f5f5f5;}
+.container {max-width: 1100px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);}
+h1 {color: #ff6b35; text-align: center;}
+input, button, select {width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; font-size: 16px;}
+button {background: #ff6b35; color: white; border: none; cursor: pointer; font-weight: bold;}
+button:hover {background: #e55a2b;}
+.btn-delete {background: #dc3545;}.btn-delete:hover {background: #b02a37;}
+.btn-print {background: #28a745;}.btn-print:hover {background: #218838;}
+.btn-clear {background: #dc3545;}
+table {width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px;}
+th, td {padding: 10px; text-align: left; border-bottom: 1px solid #ddd;}
+th {background: #ff6b35; color: white;}
+.paid {color: green; font-weight: bold;}.active {color: #ff6b35; font-weight: bold;}.overdue {color: red; font-weight: bold;}
+.late {background: #fff0f0;}
+.summary {display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;}
+.summary-box {padding: 15px; border-radius: 8px; color: white;}
+#receipt {display: none;}
+@media print { body * {visibility: hidden;} #receipt, #receipt * {visibility: visible;} #receipt {position: absolute; left: 0; top: 0; width: 100%;} }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🏦 LINDING COOP - FIREBASE</h1>
+<button class="btn-clear" onclick="clearAll()">🗑️ CLEAR ALL DATA</button>
+
+<h3>1. NEW LOAN</h3>
+<input id="name" placeholder="Pangalan">
+<input id="amount" type="number" placeholder="Halaga">
+<input id="interest" type="number" placeholder="Interest % per month" value="5">
+<input id="penalty" type="number" placeholder="Late Penalty %" value="5">
+<select id="term">
+  <option value="4">4 Weeks</option>
+  <option value="8">8 Weeks</option>
+  <option value="12">12 Weeks</option>
+</select>
+<input id="dateLoan" type="date">
+<button onclick="addLoan()">Add Loan</button>
+
+<h3>2. PAYMENT</h3>
+<select id="loanList"></select>
+<input id="payment" type="number" placeholder="Amount Binayad">
+<button onclick="addPayment()">Magbayad + Print</button>
+
+<h3>3. RECORDS</h3>
+<div style="overflow-x:auto;">
+<table id="loanTable">
+<thead><tr>
+  <th>Name</th><th>Date Loan</th><th>Due Date</th><th>Loan</th><th>Weekly</th><th>Paid</th><th>Balance</th><th>Penalty</th><th>Status</th><th>Action</th>
+</tr></thead>
+<tbody></tbody>
+</table>
+</div>
+
+<h3>4. SUMMARY</h3>
+<div class="summary">
+<div class="summary-box" style="background:#ff6b35;"><div>Total Pinautang</div><h2 id="totalLoan">₱0</h2></div>
+<div class="summary-box" style="background:#28a745;"><div>Total Nakolekta</div><h2 id="totalPaid">₱0</h2></div>
+<div class="summary-box" style="background:#17a2b8;"><div>Total Balance</div><h2 id="totalBalance">₱0</h2></div>
+<div class="summary-box" style="background:#dc3545;"><div>Total Penalty</div><h2 id="totalPenalty">₱0</h2></div>
+</div>
+
+</div>
+<div id="receipt"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// FIREBASE CONFIG MO
+const firebaseConfig = {
+  apiKey: "AIzaSyDk3ZbOXuw3PEfJzdt8AI2ueJq5yksfekE",
+  authDomain: "dhan-siomai-pos-fe1e5.firebaseapp.com",
+  projectId: "dhan-siomai-pos-fe1e5",
+  storageBucket: "dhan-siomai-pos-fe1e5.firebasestorage.app",
+  messagingSenderId: "305932123173",
+  appId: "1:305932123173:web:f27894a2d5e6e6ab8253cc"
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const loansCol = collection(db, "loans");
+
+const DELETE_PASS = "admin123";
+let loans = [];
+
+document.getElementById('dateLoan').valueAsDate = new Date();
+
+// REALTIME LISTENER - Auto update pag may nagbago sa ibang cp
+onSnapshot(loansCol, (snapshot) => {
+  loans = [];
+  snapshot.forEach((docSnap) => {
+    loans.push({ id: docSnap.id,...docSnap.data() });
+  });
+  display();
+});
+
+function getDate() { return new Date().toISOString().split('T')[0]; }
+function formatDate(dateStr) { return new Date(dateStr).toLocaleDateString('en-PH'); }
+function addWeeks(dateStr, weeks) { let d = new Date(dateStr); d.setDate(d.getDate() + (weeks * 7)); return d.toISOString().split('T')[0]; }
+function getDaysLate(dueDate) { let today = new Date(); let due = new Date(dueDate); return Math.floor((today - due) / (1000 * 60 * 60 * 24)); }
+function calcPenalty(loan) { let daysLate = getDaysLate(loan.dueDate); if(daysLate <= 0 || loan.balance <= 0) return 0; return loan.balance * (loan.penaltyRate / 100); }
+
+window.addLoan = async function() {
+  let name = document.getElementById('name').value;
+  let amount = parseFloat(document.getElementById('amount').value);
+  let interest = parseFloat(document.getElementById('interest').value);
+  let penaltyRate = parseFloat(document.getElementById('penalty').value);
+  let term = parseInt(document.getElementById('term').value);
+  let dateLoan = document.getElementById('dateLoan').value;
+
+  if(!name ||!amount ||!dateLoan) return alert('Kulang details boss');
+
+  let totalPay = amount + (amount * interest/100);
+  let weekly = totalPay / term;
+  let dueDate = addWeeks(dateLoan, term);
+
+  await addDoc(loansCol, {
+    name, amount, interest, penaltyRate, term, dateLoan, dueDate,
+    totalPay, weekly, paid: 0, balance: totalPay, payments: []
+  });
+  document.getElementById('name').value = ''; document.getElementById('amount').value = '';
+}
+
+window.addPayment = async function() {
+  let id = document.getElementById('loanList').value;
+  let pay = parseFloat(document.getElementById('payment').value);
+  let loan = loans.find(l => l.id === id);
+  if(loan && pay > 0) {
+    let penalty = calcPenalty(loan);
+    let totalDue = loan.balance + penalty;
+    loan.paid += pay;
+    loan.balance = totalDue - pay;
+    if(loan.balance < 0) loan.balance = 0;
+    let paymentData = {date: getDate(), amount: pay, penalty: penalty};
+    loan.payments.push(paymentData);
+
+    await updateDoc(doc(db, "loans", id), loan);
+    printReceipt(loan, paymentData);
+    document.getElementById('payment').value = '';
+  } else { alert('Pili ka muna ng name at magkano binayad'); }
+}
+
+window.deleteLoan = async function(id) {
+  let pass = prompt('Enter Password to Delete:');
+  if(pass === DELETE_PASS) {
+    if(confirm('Sigurado ka ba burahin?')) {
+      await deleteDoc(doc(db, "loans", id));
+    }
+  } else if(pass!== null) { alert('Mali password boss!'); }
+}
+
+window.clearAll = async function() {
+  let pass = prompt('Enter Password to Clear ALL:');
+  if(pass === DELETE_PASS) {
+    if(confirm('Sigurado ka ba? Mabubura LAHAT!')) {
+      for(let l of loans) { await deleteDoc(doc(db, "loans", l.id)); }
+      alert('Clear na boss!');
+    }
+  } else if(pass!== null) { alert('Mali password boss!'); }
+}
+
+function printReceipt(loan, payment) {
+  let penalty = payment.penalty || 0;
+  let receiptHTML = `
+    <div style="font-family: 'Courier New'; padding: 20px; max-width: 300px; margin: auto; border: 2px dashed #000;">
+      <div style="text-align: center; border-bottom: 2px dashed #000; padding-bottom: 10px;">
+        <h2>LINDING COOP</h2><p>PAYMENT RECEIPT</p>
+      </div>
+      <div style="margin-top: 10px;">
+        <p><b>Date:</b> ${formatDate(payment.date)}</p>
+        <p><b>Name:</b> ${loan.name}</p><hr style="border: 1px dashed #000;">
+        <p><b>Amount Paid:</b> ₱${payment.amount.toFixed(2)}</p>
+        ${penalty > 0? `<p><b>Late Penalty:</b> ₱${penalty.toFixed(2)}</p>` : ''}
+        <p><b>New Balance:</b> ₱${loan.balance.toFixed(2)}</p>
+        <p><b>Weekly Due:</b> ₱${loan.weekly.toFixed(2)}</p>
+        <p><b>Due Date:</b> ${formatDate(loan.dueDate)}</p><hr style="border: 1px dashed #000;">
+        <p style="text-align:center;">Salamat po!</p>
+      </div>
+      <button onclick="window.print()" class="btn-print" style="width:100%; margin-top:10px;">PRINT / SAVE PDF</button>
+    </div>`;
+  document.getElementById('receipt').innerHTML = receiptHTML;
+  document.getElementById('receipt').style.display = 'block';
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function display() {
+  let tbl = document.querySelector('#loanTable tbody');
+  let select = document.getElementById('loanList');
+  tbl.innerHTML = ''; select.innerHTML = '<option value="">-- Pili ng Name --</option>';
+
+  let totalL = 0, totalP = 0, totalB = 0, totalPen = 0;
+
+  loans.forEach(l => {
+    let penalty = calcPenalty(l);
+    let daysLate = getDaysLate(l.dueDate);
+    let status = l.balance <= 0? '<span class="paid">PAID</span>' : daysLate > 0? '<span class="overdue">LATE</span>' : '<span class="active">ACTIVE</span>';
+    let rowClass = daysLate > 0 && l.balance > 0? 'class="late"' : '';
+
+    tbl.innerHTML += `<tr ${rowClass}>
+      <td>${l.name}</td><td>${formatDate(l.dateLoan)}</td><td>${formatDate(l.dueDate)}</td>
+      <td>₱${l.amount.toFixed(2)}</td><td>₱${l.weekly.toFixed(2)}</td><td>₱${l.paid.toFixed(2)}</td>
+      <td>₱${l.balance.toFixed(2)}</td><td>₱${penalty.toFixed(2)}</td><td>${status}</td>
+      <td><button class="btn-delete" onclick="deleteLoan('${l.id}')">Delete</button></td>
+    </tr>`;
+
+    if(l.balance > 0) select.innerHTML += `<option value="${l.id}">${l.name} - Bal: ₱${l.balance.toFixed(2)}</option>`;
+    totalL += l.amount; totalP += l.paid; totalB += l.balance; totalPen += penalty;
+  });
+
+  document.getElementById('totalLoan').innerText = `₱${totalL.toFixed(2)}`;
+  document.getElementById('totalPaid').innerText = `₱${totalP.toFixed(2)}`;
+  document.getElementById('totalBalance').innerText = `₱${totalB.toFixed(2)}`;
+  document.getElementById('totalPenalty').innerText = `₱${totalPen.toFixed(2)}`;
+}
+</script>
+</body>
+</html>
