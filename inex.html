@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LINDING COOP - Main Menu</title>
+<style>
+body{font-family:"Segoe UI",Arial;background:#f5f5f5;padding:15px;margin:0;}
+.container{max-width:500px;margin:40px auto;}
+.logo{text-align:center;margin-bottom:30px;}
+.logo h1{color:#ff6b35;margin:0;font-size:32px;}
+.logo p{color:#666;margin-top:5px;}
+.menu-card{background:white;padding:25px;border-radius:18px;box-shadow:0 4px 12px rgba(0,0,0,0.1);margin-bottom:20px;cursor:pointer;transition:0.2s;border-left:6px solid #ff6b35;display:flex;align-items:center;gap:15px;}
+.menu-card:hover{transform:translateY(-3px);box-shadow:0 8px 20px rgba(0,0,0,0.15);}
+.menu-card.profit{border-left-color:#111;}
+.icon{font-size:40px;width:60px;height:60px;background:#fff0e6;border-radius:12px;display:flex;align-items:center;justify-content:center;}
+.menu-card.profit .icon{background:#eee;}
+.text h2{margin:0;font-size:20px;color:#222;}
+.text p{margin:4px 0 0 0;font-size:13px;color:#888;}
+.footer{text-align:center;margin-top:30px;color:#aaa;font-size:12px;}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="logo">
+    <h1>🏦 LINDING COOP</h1>
+    <p>Firebase System</p>
+  </div>
+
+  <div class="menu-card" onclick="location.href='loans.html'">
+    <div class="icon">📝</div>
+    <div class="text">
+      <h2>Manage Loans</h2>
+      <p>New Loan, Payment, Records, Summary</p>
+    </div>
+  </div>
+
+  <div class="menu-card profit" onclick="location.href='net-profit.html'">
+    <div class="icon">💰</div>
+    <div class="text">
+      <h2>Net Profit Report</h2>
+      <p>Tubo, Hulog per Date, Drop-down by Name</p>
+    </div>
+  </div>
+
+  <div class="footer">
+    Linding Coop v1.0 • 2026<br>
+    Connected to Firebase
+  </div>
+</div>
+</body>
+</html>
